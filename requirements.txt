@@ -1,0 +1,14 @@
+# Dépendances — jeu de combat 1v1 de slime (PC, Mac, Linux)
+# Installation :
+#   python -m venv venv && venv\Scripts\activate  (ou source venv/bin/activate)
+#   pip install -r requirements.txt
+#
+# Le noyau du jeu est multiplateforme. Pour Android/iOS (mobil en priorité) :
+#   * Kivy>=2.3.0  (route de finalisation, à installer quand le PC fonctionne)
+
+# Moteur 2D : Pygame (version 'ce', binaire pré-compilé, aucune compilation).
+# Installe déjà sur votre machine ; mise à jour : pip install -U pygame-ce
+pygame-ce>=2.5.0
+
+# (Phase finale mobile) — décommenter quand le PC est opérationnel :
+# Kivy>=2.3.0
