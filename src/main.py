@@ -5,8 +5,17 @@ Module : src.main
 Rôle   : application Pygame qui affiche et pilote le combat 1v1 de deux slimes.
 """
 
-import random
+import os
 import sys
+
+# Ajouter le répertoire racine du projet au chemin pour que "src" soit importable
+# quand on lance "python src/main.py".
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_HERE)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+import random
 import time
 
 import pygame
@@ -18,7 +27,8 @@ BLEU_JOUEUR = (180, 218, 255)
 VERT_ENNEMI = (120, 230, 150)
 NOIR = (30, 30, 30)
 BLANC = (255, 255, 255)
-FOND = (20, 18, 28)
+BLEU_BOUTON = (60, 80, 140)
+VERT_BOUTON = (60, 120, 70)
 
 TITRE = "Slime Combat 1v1 — combat 1v1 de slimes"
 INSTR = "Espace or clic gauche = attaquer (slime de gauche)"
@@ -65,18 +75,46 @@ class JeuPygame:
 
         self.tps = 0
 
-    def gerer_evenements(self):
-        for evenement in pygame.event.get():
-            if evenement.type == pygame.QUIT:
+        # États de la partie : menu, jeu, termine
+        self.etat = "menu"
+
+    # ------------------------------------------------------------------
+    # Gestion des événements
+    # ------------------------------------------------------------------
+
+    def gerer_evenements_menu(self, evenement):
+        if evenement.type == pygame.MOUSEBUTTONDOWN:
+            x, y = evenement.pos
+            if self._bouton_cliqué(x, y, 250, 450, 320, 80, "Jouer"):
+                self.etat = "jeu"
+            elif self._bouton_cliqué(x, y, 250, 540, 320, 80, "Quitter"):
                 self.quitter()
-            elif evenement.type == pygame.MOUSEBUTTONDOWN:
-                if self.moteur.joueur.is_alive and pygame.mouse.get_pressed()[0]:
-                    x, y = evenement.pos
-                    if x < self.largeur // 2 and self._zone_slime_gauche(x, y):
-                        self.attaquer_cote("joueur")
-            elif evenement.type == pygame.KEYDOWN:
-                if self.moteur.joueur.is_alive and evenement.key == pygame.K_SPACE:
+
+    def gerer_evenements_jeu(self, evenement):
+        if evenement.type == pygame.MOUSEBUTTONDOWN:
+            if self.moteur.joueur.is_alive:
+                x, y = evenement.pos
+                if x < self.largeur // 2:
                     self.attaquer_cote("joueur")
+        elif evenement.type == pygame.KEYDOWN:
+            if self.moteur.joueur.is_alive and evenement.key == pygame.K_SPACE:
+                self.attaquer_cote("joueur")
+
+    def gerer_evenements_termine(self, evenement):
+        if evenement.type == pygame.MOUSEBUTTONDOWN:
+            x, y = evenement.pos
+            if self._bouton_cliqué(x, y, 250, 450, 320, 80, "Rejouer"):
+                self._reinitialiser()
+                self.etat = "jeu"
+
+            if self.etat == "menu":
+                self.gerer_evenements_menu(evenement)
+
+            elif self.etat == "jeu":
+                self.gerer_evenements_jeu(evenement)
+
+            elif self.etat == "termine":
+                self.gerer_evenements_termine(evenement)
 
     def attaquer_cote(self, cote: str):
         if cote == "joueur":
@@ -91,28 +129,83 @@ class JeuPygame:
             self.attaquer_cote("ennemi")
             self.dernier_coup_enemy = time.time()
 
-    def _zone_slime_gauche(self, x: float, y: float) -> bool:
-        return 40 < x < self.largeur // 2 - 40 and 330 < y < self.hauteur - 200
+    def _bouton_cliqué(self, x: float, y: float, bx: float, by: float, bw: float, bh: float, label: str) -> bool:
+        """Vérifie si un clic est dans un bouton rectangulaire."""
+        return bx <= x <= bx + bw and by <= y <= by + bh
 
-    def afficher(self):
+    def gerer_evenements_termine(self, evenement):
+        if evenement.type == pygame.MOUSEBUTTONDOWN:
+            x, y = evenement.pos
+            if self._bouton_cliqué(x, y, 250, 450, 320, 80, "Rejouer"):
+                self._reinitialiser()
+                self.etat = "jeu"
         self.fenetre.fill(FOND)
+        if self.etat == "menu":
+            self._afficher_menu()
+        elif self.etat == "jeu":
+            self._afficher_jeu()
+        elif self.etat == "termine":
+            self._afficher_termine()
+        pygame.display.flip()
+
+    def _afficher_menu(self):
+        self._afficher_titres()
+        self._afficher_instruction()
+        self._afficher_boutons_menu()
+
+    def _afficher_boutons_menu(self):
+        pygame.draw.rect(self.fenetre, BLEU_BOUTON, (250, 450, 320, 80), border_radius=14)
+        txt = self.font.render("Jouer", True, BLANC)
+        self.fenetre.blit(txt, (250 + txt.get_width() // 2, 470))
+        pygame.draw.rect(self.fenetre, BLEU_BOUTON, (250, 540, 320, 80), border_radius=14)
+        txt = self.font.render("Quitter", True, BLANC)
+        self.fenetre.blit(txt, (250 + txt.get_width() // 2, 560))
+
+    def _afficher_jeu(self):
         self._dessiner_piste()
         self._afficher_titres()
         self._afficher_bars_vie()
         self._afficher_slime_joueur()
         self._afficher_slime_ennemi()
         self._afficher_instruction()
-        self._afficher_texte_terminus()
+        self._afficher_terminus()
         self._afficher_dégâts()
-        pygame.display.flip()
 
-    def _dessiner_piste(self):
-        pygame.draw.rect(
-            self.fenetre, (26, 23, 36), (0, 0, self.largeur, self.hauteur - 260), border_radius=0
-        )
-        pygame.draw.rect(
-            self.fenetre, (40, 37, 52), (20, self.hauteur - 320, self.largeur - 40, 300), border_radius=14
-        )
+    def _afficher_terminus(self):
+        if not self.partie_terminee:
+            return
+        if self.moteur.joueur_gagne:
+            motif = "Victoire"
+            couleur = VERT_ENNEMI
+        else:
+            motif = "Défaite"
+            couleur = NOIR
+        gros = self.font_gros.render("Slime Combat 1v1", True, NOIR)
+        sous = self.font.render(f"{motif} !", True, couleur)
+        effacer = self.font_gros.render("Slime Combat 1v1", True, (0, 0, 0, 180))
+        self.fenetre.blit(gros, (self.largeur // 2 - gros.get_width() // 2, 230))
+        self.fenetre.blit(sous, (self.largeur // 2 - sous.get_width() // 2, 290))
+        self.fenetre.blit(effacer, (self.largeur // 2 - effacer.get_width() // 2, 245))
+
+    def _afficher_termine(self):
+        if self.moteur.joueur_gagne:
+            motif = "Victoire"
+            couleur = VERT_ENNEMI
+        else:
+            motif = "Défaite"
+            couleur = NOIR
+        gros = self.font_gros.render("Slime Combat 1v1", True, NOIR)
+        sous = self.font.render(f"{motif} !", True, couleur)
+        effacer = self.font_gros.render("Slime Combat 1v1", True, (0, 0, 0, 180))
+        self.fenetre.blit(gros, (self.largeur // 2 - gros.get_width() // 2, 230))
+        self.fenetre.blit(sous, (self.largeur // 2 - sous.get_width() // 2, 290))
+        self.fenetre.blit(effacer, (self.largeur // 2 - effacer.get_width() // 2, 245))
+        self._afficher_boutons_terminé()
+
+    def _afficher_boutons_terminé(self):
+        pygame.draw.rect(self.fenetre, BLEU_BOUTON, (250, 450, 320, 80), border_radius=14)
+        txt = self.font.render("Rejouer", True, BLANC)
+        self.fenetre.blit(txt, (250 + txt.get_width() // 2, 470))
 
     def _afficher_titres(self):
         titre = self.font.render(TITRE, True, BLANC, FOND)
@@ -192,9 +285,19 @@ class JeuPygame:
         elif self.dégâts > 0:
             self.dégâts = 0
 
-    def quitter(self):
-        pygame.quit()
-        sys.exit()
+    def _est_fin_partie(self) -> bool:
+        return self.moteur.joueur_gagne or self.moteur.ennemi_gagne or self.moteur.match_nul
+
+    def _reinitialiser(self):
+        self.etat = "menu"
+        self.joueur = creer_joueur()
+        self.ennemi = creer_ennemi()
+        self.moteur = CombatEngine(self.joueur, self.ennemi)
+        self.partie_terminee = False
+        self.dégâts = 0
+        self.dégâts_vie = 1.0
+        self.dernier_coup_enemy = 0
+        self.cooldown_enemy = self.ennemi.attack_cooldown
 
     def executer(self):
         while True:
@@ -202,6 +305,9 @@ class JeuPygame:
             self.gerer_enemy()
             self.afficher()
             pygame.time.wait(16)
+            if self.etat == "jeu" and self._est_fin_partie():
+                self.partie_terminee = True
+                self.etat = "termine"
 
 
 def main():
