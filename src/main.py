@@ -29,9 +29,15 @@ NOIR = (30, 30, 30)
 BLANC = (255, 255, 255)
 BLEU_BOUTON = (60, 80, 140)
 VERT_BOUTON = (60, 120, 70)
+FOND = (0, 0, 0, 120)
 
 TITRE = "Slime Combat 1v1 — combat 1v1 de slimes"
-INSTR = "Espace or clic gauche = attaquer (slime de gauche)"
+INSTR_TOUR = "Clique sur une action pour jouer ton tour"
+INSTR_COMBAT = "Espace or clic = attaquer (slime de gauche)"
+
+ACTION_ATTAQUE = "Attaque"
+ACTION_DEFAITE = "Défense"
+ACTION_SOIN = "Soin"
 
 
 def creer_joueur() -> Slime:
@@ -46,8 +52,16 @@ class JeuPygame:
     """
     Application Pygame du jeu de combat 1v1.
 
-    Le joueur (slime de gauche) attaque avec Espace / clic. L'ennemi
-    attaque tout seul suivant un cooldown. Le premier à atteindre 0 PV perd.
+    Système de tours par tours :
+      - Tour duJoueur     : le joueur choisit une action
+      - Tour de l'ennemi  : l'ennemi répond automatiquement
+
+    Actions possibles du joueur :
+      - Attaque : inflige des dégâts à l'ennemi
+      - Défense : réduit les dégâts reçus lors du tour adverse
+      - Soin    : soigne un peu ses propres PV
+
+    Le premier à atteindre 0 PV perd.
     """
 
     def __init__(self, largeur=820, hauteur=660):
@@ -75,8 +89,33 @@ class JeuPygame:
 
         self.tps = 0
 
-        # États de la partie : menu, jeu, termine
+        # États de la partie : menu, tour_joueur, tour_enemi, termine
         self.etat = "menu"
+
+        # Phase de tour
+        self.tour = 1
+        self.phase = "tour_joueur"  # tour_joueur, tour_enemi, fin
+
+    # ------------------------------------------------------------------
+    # Gestion des événements
+    # ------------------------------------------------------------------
+
+    def gerer_evenements(self):
+        for evenement in pygame.event.get():
+            if evenement.type == pygame.QUIT:
+                self.quitter()
+
+            if self.etat == "menu":
+                self.gerer_evenements_menu(evenement)
+
+            elif self.etat == "tour_joueur":
+                self.gerer_evenements_tour_joueur(evenement)
+
+            elif self.etat == "tour_enemi":
+                self.gerer_evenements_tour_enemi(evenement)
+
+            elif self.etat == "termine":
+                self.gerer_evenements_termine(evenement)
 
     # ------------------------------------------------------------------
     # Gestion des événements
@@ -86,9 +125,63 @@ class JeuPygame:
         if evenement.type == pygame.MOUSEBUTTONDOWN:
             x, y = evenement.pos
             if self._bouton_cliqué(x, y, 250, 450, 320, 80, "Jouer"):
-                self.etat = "jeu"
+                self.etat = "tour_joueur"
             elif self._bouton_cliqué(x, y, 250, 540, 320, 80, "Quitter"):
                 self.quitter()
+
+    def gerer_evenements_tour_joueur(self, evenement):
+        if evenement.type == pygame.MOUSEBUTTONDOWN:
+            x, y = evenement.pos
+            if self._bouton_cliqué(x, y, 100, 300, 200, 80, ACTION_ATTAQUE):
+                self.attaquer_cote("joueur")
+                self.phase = "tour_enemi"
+            elif self._bouton_cliqué(x, y, 310, 300, 200, 80, ACTION_DEFAITE):
+                self._defense_joueur()
+                self.phase = "tour_enemi"
+            elif self._bouton_cliqué(x, y, 520, 300, 200, 80, ACTION_SOIN):
+                self._soin_joueur()
+                self.phase = "tour_enemi"
+
+    def gerer_evenements_tour_enemi(self, evenement):
+        if evenement.type == pygame.MOUSEBUTTONDOWN:
+            x, y = evenement.pos
+            if self._bouton_cliqué(x, y, 250, 450, 320, 80, "Rejouer"):
+                self._reinitialiser()
+                self.etat = "tour_joueur"
+
+    def attaquer_cote(self, cote: str):
+        if cote == "joueur":
+            degats = self.moteur.attaquer(self.joueur, self.ennemi)
+        else:
+            degats = self.moteur.attaquer(self.ennemi, self.joueur)
+        self.dégâts = degats
+        self.dégâts_vie = 1.0
+
+    def _defense_joueur(self):
+        self.dégâts_vie = 0.5
+
+    def _soin_joueur(self):
+        self.joueur.hp = min(self.joueur.max_hp, self.joueur.hp + 3)
+
+    def gerer_enemy(self):
+        if self.phase != "tour_enemi":
+            return
+        if not self.ennemi.is_alive:
+            return
+        if time.time() - self.dernier_coup_enemy > self.cooldown_enemy:
+            self.attaquer_cote("ennemi")
+            self.dernier_coup_enemy = time.time()
+
+    def gerer_evenements(self):
+        for evenement in pygame.event.get():
+            if evenement.type == pygame.QUIT:
+                self.quitter()
+            elif self.etat == "menu":
+                self.gerer_evenements_menu(evenement)
+            elif self.etat == "jeu":
+                self.gerer_evenements_jeu(evenement)
+            elif self.etat == "termine":
+                self.gerer_evenements_termine(evenement)
 
     def gerer_evenements_jeu(self, evenement):
         if evenement.type == pygame.MOUSEBUTTONDOWN:
@@ -107,46 +200,33 @@ class JeuPygame:
                 self._reinitialiser()
                 self.etat = "jeu"
 
-            if self.etat == "menu":
-                self.gerer_evenements_menu(evenement)
-
-            elif self.etat == "jeu":
-                self.gerer_evenements_jeu(evenement)
-
-            elif self.etat == "termine":
-                self.gerer_evenements_termine(evenement)
 
     def attaquer_cote(self, cote: str):
         if cote == "joueur":
-            self.moteur.attaquer(self.joueur, self.ennemi)
+            degats = self.moteur.attaquer(self.joueur, self.ennemi)
         else:
-            self.moteur.attaquer(self.ennemi, self.joueur)
+            degats = self.moteur.attaquer(self.ennemi, self.joueur)
+        # Affiche les dégâts infligés pendant quelques instants.
+        self.dégâts = degats
+        self.dégâts_vie = 1.0
 
     def gerer_enemy(self):
+        if self.etat != "jeu":
+            return
         if not self.ennemi.is_alive:
             return
         if time.time() - self.dernier_coup_enemy > self.cooldown_enemy:
             self.attaquer_cote("ennemi")
             self.dernier_coup_enemy = time.time()
 
+    def quitter(self):
+        pygame.quit()
+        sys.exit()
+
     def _bouton_cliqué(self, x: float, y: float, bx: float, by: float, bw: float, bh: float, label: str) -> bool:
         """Vérifie si un clic est dans un bouton rectangulaire."""
         return bx <= x <= bx + bw and by <= y <= by + bh
 
-    def gerer_evenements_termine(self, evenement):
-        if evenement.type == pygame.MOUSEBUTTONDOWN:
-            x, y = evenement.pos
-            if self._bouton_cliqué(x, y, 250, 450, 320, 80, "Rejouer"):
-                self._reinitialiser()
-                self.etat = "jeu"
-        self.fenetre.fill(FOND)
-        if self.etat == "menu":
-            self._afficher_menu()
-        elif self.etat == "jeu":
-            self._afficher_jeu()
-        elif self.etat == "termine":
-            self._afficher_termine()
-        pygame.display.flip()
 
     def _afficher_menu(self):
         self._afficher_titres()
@@ -161,53 +241,48 @@ class JeuPygame:
         txt = self.font.render("Quitter", True, BLANC)
         self.fenetre.blit(txt, (250 + txt.get_width() // 2, 560))
 
-    def _afficher_jeu(self):
-        self._dessiner_piste()
+    def _afficher_tour_joueur(self):
         self._afficher_titres()
+        self._afficher_instruction_tour()
         self._afficher_bars_vie()
         self._afficher_slime_joueur()
         self._afficher_slime_ennemi()
-        self._afficher_instruction()
-        self._afficher_terminus()
-        self._afficher_dégâts()
+        self._afficher_boutons_actions()
+        self._afficher_texte_tour()
 
-    def _afficher_terminus(self):
-        if not self.partie_terminee:
-            return
-        if self.moteur.joueur_gagne:
-            motif = "Victoire"
-            couleur = VERT_ENNEMI
-        else:
-            motif = "Défaite"
-            couleur = NOIR
-        gros = self.font_gros.render("Slime Combat 1v1", True, NOIR)
-        sous = self.font.render(f"{motif} !", True, couleur)
-        effacer = self.font_gros.render("Slime Combat 1v1", True, (0, 0, 0, 180))
-        self.fenetre.blit(gros, (self.largeur // 2 - gros.get_width() // 2, 230))
-        self.fenetre.blit(sous, (self.largeur // 2 - sous.get_width() // 2, 290))
-        self.fenetre.blit(effacer, (self.largeur // 2 - effacer.get_width() // 2, 245))
+    def _afficher_tour_enemi(self):
+        self._afficher_titres()
+        self._afficher_instruction_tour()
+        self._afficher_texte_tour()
+        self._afficher_bars_vie()
+        self._afficher_slime_joueur()
+        self._afficher_slime_ennemi()
+        self._afficher_texte_enemy_attacking()
 
-    def _afficher_termine(self):
-        if self.moteur.joueur_gagne:
-            motif = "Victoire"
-            couleur = VERT_ENNEMI
-        else:
-            motif = "Défaite"
-            couleur = NOIR
-        gros = self.font_gros.render("Slime Combat 1v1", True, NOIR)
-        sous = self.font.render(f"{motif} !", True, couleur)
-        effacer = self.font_gros.render("Slime Combat 1v1", True, (0, 0, 0, 180))
-        self.fenetre.blit(gros, (self.largeur // 2 - gros.get_width() // 2, 230))
-        self.fenetre.blit(sous, (self.largeur // 2 - sous.get_width() // 2, 290))
-        self.fenetre.blit(effacer, (self.largeur // 2 - effacer.get_width() // 2, 245))
-        self._afficher_boutons_terminé()
+    def _afficher_texte_tour(self):
+        txt = self.font.render(f"Tour {self.tour}", True, BLANC, FOND)
+        self.fenetre.blit(txt, (self.largeur // 2 - txt.get_width() // 2, 40))
 
-    def _afficher_boutons_terminé(self):
-        pygame.draw.rect(self.fenetre, BLEU_BOUTON, (250, 450, 320, 80), border_radius=14)
-        txt = self.font.render("Rejouer", True, BLANC)
-        self.fenetre.blit(txt, (250 + txt.get_width() // 2, 470))
+    def _afficher_texte_enemy_attacking(self):
+        txt = self.font.render("L'ennemi attaque...", True, NOIR, FOND)
+        self.fenetre.blit(txt, (self.largeur // 2 - txt.get_width() // 2, 40))
 
-    def _afficher_titres(self):
+    def _afficher_boutons_actions(self):
+        pygame.draw.rect(self.fenetre, BLEU_BOUTON, (100, 300, 200, 80), border_radius=14)
+        txt = self.font.render(ACTION_ATTAQUE, True, BLANC)
+        self.fenetre.blit(txt, (100 + txt.get_width() // 2, 320))
+
+        pygame.draw.rect(self.fenetre, BLEU_BOUTON, (310, 300, 200, 80), border_radius=14)
+        txt = self.font.render(ACTION_DEFAITE, True, BLANC)
+        self.fenetre.blit(txt, (310 + txt.get_width() // 2, 320))
+
+        pygame.draw.rect(self.fenetre, BLEU_BOUTON, (520, 300, 200, 80), border_radius=14)
+        txt = self.font.render(ACTION_SOIN, True, BLANC)
+        self.fenetre.blit(txt, (520 + txt.get_width() // 2, 320))
+
+    def _afficher_instruction_tour(self):
+        txt = self.font.render(INSTR_TOUR, True, (170, 180, 210))
+        self.fenetre.blit(txt, (self.largeur // 2 - txt.get_width() // 2, self.hauteur - 52))
         titre = self.font.render(TITRE, True, BLANC, FOND)
         self.fenetre.blit(titre, (self.largeur // 2 - titre.get_width() // 2, 26))
 
@@ -238,6 +313,11 @@ class JeuPygame:
         self._dessiner_slime(cx, cy, VERT_ENNEMI)
         self._texte_illisible("Ennemi", cx, cy - 40, BLANC, 26)
 
+    def _dessiner_piste(self):
+        pygame.draw.rect(self.fenetre, (245, 245, 245), (0, 0, self.largeur, self.hauteur))
+        pygame.draw.line(self.fenetre, (80, 80, 80), (40, 70), (self.largeur - 40, 70), 3)
+        pygame.draw.line(self.fenetre, (80, 80, 80), (40, self.hauteur - 70), (self.largeur - 40, self.hauteur - 70), 3)
+
     def _dessiner_slime(self, cx: float, cy: float, couleur: tuple[int, int, int]):
         r = 58
         pygame.draw.ellipse(self.fenetre, couleur, (cx - r, cy - 50, r * 2, r * 2), 0)
@@ -256,23 +336,6 @@ class JeuPygame:
         txt = self.font.render(INSTR, True, (170, 180, 210))
         self.fenetre.blit(txt, (self.largeur // 2 - txt.get_width() // 2, self.hauteur - 52))
 
-    def _afficher_texte_terminus(self):
-        if not self.moteur.joueur.is_alive and not self.moteur.ennemi.is_alive:
-            return
-        if not self.partie_terminee:
-            return
-        if self.moteur.ennemi.is_alive and not self.moteur.joueur.is_alive:
-            motif = "Défaite"
-            couleur = NOIR
-        else:
-            motif = "Victoire"
-            couleur = VERT_ENNEMI
-        gros = self.font_gros.render("Slime Combat 1v1", True, NOIR)
-        sous = self.font.render(f"{motif} !", True, couleur)
-        effacer = self.font_gros.render("Slime Combat 1v1", True, (0, 0, 0, 200))
-        self.fenetre.blit(gros, (self.largeur // 2 - gros.get_width() // 2, 230))
-        self.fenetre.blit(sous, (self.largeur // 2 - sous.get_width() // 2, 290))
-        self.fenetre.blit(effacer, (self.largeur // 2 - effacer.get_width() // 2, 240))
 
     def _afficher_dégâts(self):
         if self.dégâts > 0 and self.dégâts_vie > 0:
